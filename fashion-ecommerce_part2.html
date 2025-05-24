@@ -1,0 +1,173 @@
+<div class="checkout" v-if="showCheckout">
+        <h2>Checkout</h2>
+        <form @submit.prevent="processPayment">
+          <div>
+            <label for="name">Name:</label>
+            <input id="name" v-model="name" required />
+          </div>
+          <div>
+            <label for="bank">Select Bank:</label>
+            <select id="bank" v-model="selectedBank" required>
+              <option disabled value="">Please select one</option>
+              <option v-for="bank in banks" :key="bank" :value="bank">{{ bank }}</option>
+            </select>
+          </div>
+          <div>
+            <label for="card">Card Number:</label>
+            <input id="card" v-model="cardNumber" required maxlength="16" pattern="\\d{16}" />
+          </div>
+          <div>
+            <label for="expiry">Expiry Date:</label>
+            <input id="expiry" v-model="expiry" required placeholder="MM/YY" pattern="(0[1-9]|1[0-2])\\/\\d{2}" />
+          </div>
+          <div>
+            <label for="cvv">CVV:</label>
+            <input id="cvv" v-model="cvv" required maxlength="3" pattern="\\d{3}" />
+          </div>
+          <div class="buttons">
+            <button type="submit" class="pay-btn">Pay \${{ total.toFixed(2) }}</button>
+            <button type="button" class="cancel-btn" @click="cancelCheckout">Cancel</button>
+            <button type="button" class="pay-btn" @click="openScanner">Scan & Pay</button>
+          </div>
+        </form>
+        <div v-if="paymentProcessing" class="processing">Processing payment...</div>
+        <div v-if="showQRCode" class="qr-code">
+          <h3>Scan QR Code to Pay</h3>
+          <canvas ref="qrcode"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+  <footer>
+    &copy; 2024 FashionKart. All rights reserved.
+  </footer>
+
+  <div id="scannerModal">
+    <div id="scannerContainer">
+      <button id="closeScanner" @click="closeScanner">X</button>
+      <video id="video" width="400" height="300" autoplay></video>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/vue@2/dist/vue.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <script src="https://unpkg.com/@zxing/library@latest"></script>
+  <script>
+    new Vue({
+      el: '#app',
+      data: {
+        products: [
+          { id: 1, name: 'Classic Denim Jacket', price: 79.99, description: 'Stylish denim jacket for all seasons', image: 'https://images.unsplash.com/photo-1521334884684-d80222895322?auto=format&fit=crop&w=400&q=80' },
+          { id: 2, name: 'Leather Boots', price: 120.00, description: 'Durable and comfortable leather boots', image: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=400&q=80' },
+          { id: 3, name: 'Floral Summer Dress', price: 59.99, description: 'Lightweight and colorful summer dress', image: 'https://images.unsplash.com/photo-1503341455253-b2e723bb3dbb?auto=format&fit=crop&w=400&q=80' },
+          { id: 4, name: 'Casual T-Shirt', price: 25.00, description: 'Soft cotton t-shirt in various colors', image: 'https://images.unsplash.com/photo-1520975695911-0a1a0a7a7a1a?auto=format&fit=crop&w=400&q=80' },
+          { id: 5, name: 'Elegant Wristwatch', price: 199.99, description: 'Classic wristwatch with leather strap', image: 'https://images.unsplash.com/photo-1519741491700-0a1a0a7a7a1a?auto=format&fit=crop&w=400&q=80' },
+          { id: 6, name: 'Sunglasses', price: 49.99, description: 'UV protection sunglasses with modern design', image: 'https://images.unsplash.com/photo-1503341455253-b2e723bb3dbb?auto=format&fit=crop&w=400&q=80' },
+          { id: 7, name: 'Winter Scarf', price: 35.00, description: 'Warm and cozy wool scarf', image: 'https://images.unsplash.com/photo-1519741491700-0a1a0a7a7a1a?auto=format&fit=crop&w=400&q=80' },
+          { id: 8, name: 'Leather Handbag', price: 150.00, description: 'Elegant leather handbag for everyday use', image: 'https://images.unsplash.com/photo-1503342217505-b0a15ec3261c?auto=format&fit=crop&w=400&q=80' },
+          { id: 9, name: 'Running Sneakers', price: 90.00, description: 'Comfortable and durable running shoes', image: 'https://images.unsplash.com/photo-1520975695911-0a1a0a7a7a1a?auto=format&fit=crop&w=400&q=80' },
+          { id: 10, name: 'Baseball Cap', price: 20.00, description: 'Casual cap with adjustable strap', image: 'https://images.unsplash.com/photo-1503341455253-b2e723bb3dbb?auto=format&fit=crop&w=400&q=80' }
+        ],
+        cartItems: [],
+        showCheckout: false,
+        name: '',
+        selectedBank: '',
+        banks: ['Bank of America', 'Chase', 'Wells Fargo', 'Citi Bank', 'HSBC'],
+        cardNumber: '',
+        expiry: '',
+        cvv: '',
+        paymentProcessing: false,
+        showQRCode: false,
+        scannerActive: false,
+        codeResult: ''
+      },
+      computed: {
+        total() {
+          return this.cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+        }
+      },
+      methods: {
+        addToCart(product) {
+          const existing = this.cartItems.find(item => item.id === product.id);
+          if (existing) {
+            existing.quantity++;
+          } else {
+            this.cartItems.push({ ...product, quantity: 1 });
+          }
+        },
+        updateQuantity(item) {
+          if (item.quantity <= 0) {
+            this.cartItems = this.cartItems.filter(ci => ci.id !== item.id);
+          }
+        },
+        removeFromCart(item) {
+          this.cartItems = this.cartItems.filter(ci => ci.id !== item.id);
+        },
+        proceedToCheckout() {
+          if (this.cartItems.length === 0) {
+            alert('Your cart is empty.');
+            return;
+          }
+          this.showCheckout = true;
+          this.showQRCode = false;
+        },
+        cancelCheckout() {
+          this.showCheckout = false;
+          this.paymentProcessing = false;
+          this.showQRCode = false;
+          this.name = '';
+          this.selectedBank = '';
+          this.cardNumber = '';
+          this.expiry = '';
+          this.cvv = '';
+        },
+        processPayment() {
+          if (!this.name || !this.selectedBank || !this.cardNumber || !this.expiry || !this.cvv) {
+            alert('Please fill in all payment details.');
+            return;
+          }
+          this.paymentProcessing = true;
+          setTimeout(() => {
+            this.paymentProcessing = false;
+            this.showQRCode = true;
+            this.generateQRCode();
+          }, 2000);
+        },
+        generateQRCode() {
+          const paymentInfo = `Pay $${this.total.toFixed(2)} to ${this.selectedBank}`;
+          const canvas = this.$refs.qrcode;
+          QRCode.toCanvas(canvas, paymentInfo, { width: 200 }, function (error) {
+            if (error) console.error(error);
+          });
+        },
+        openScanner() {
+          this.scannerActive = true;
+          document.getElementById('scannerModal').classList.add('active');
+          this.startScanner();
+        },
+        closeScanner() {
+          this.scannerActive = false;
+          document.getElementById('scannerModal').classList.remove('active');
+          if (this.codeReader) {
+            this.codeReader.reset();
+          }
+        },
+        startScanner() {
+          const codeReader = new ZXing.BrowserQRCodeReader();
+          this.codeReader = codeReader;
+          codeReader.decodeFromVideoDevice(null, 'video', (result, err) => {
+            if (result) {
+              this.codeResult = result.text;
+              alert('QR Code scanned: ' + this.codeResult);
+              this.closeScanner();
+            }
+            if (err && !(err instanceof ZXing.NotFoundException)) {
+              console.error(err);
+            }
+          });
+        }
+      }
+    });
+  </script>
+</body>
+</html>
